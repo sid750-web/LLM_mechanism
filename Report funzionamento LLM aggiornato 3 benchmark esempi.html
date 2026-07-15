@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Come funziona un LLM — dal tuo file del 2023 al meccanismo completo</title>
+<style>
+  :root{
+    --ink:#1a1714;
+    --paper:#f4efe6;
+    --paper2:#ebe3d5;
+    --rule:#c9bca5;
+    --accent:#9a3b2e;      /* terracotta */
+    --accent2:#2f5d50;     /* verde scuro */
+    --gold:#a9852f;
+    --shadow:rgba(40,30,20,.18);
+    --maxw:760px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    font-size:18px;line-height:1.62;
+    background-image:radial-gradient(circle at 20% 10%,rgba(154,59,46,.04),transparent 40%),radial-gradient(circle at 80% 80%,rgba(47,93,80,.04),transparent 40%);
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px 120px}
+
+  /* progress bar */
+  #bar{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;z-index:50}
+
+  /* header */
+  header.hero{padding:90px 0 50px;border-bottom:2px solid var(--ink)}
+  .kicker{font-family:"Courier New",monospace;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin-bottom:22px}
+  h1{font-size:46px;line-height:1.08;margin:0 0 18px;font-weight:700;letter-spacing:-.01em}
+  .sub{font-size:19px;color:#5c5247;max-width:580px}
+  .meta{font-family:"Courier New",monospace;font-size:12px;color:#7a6f60;margin-top:30px;letter-spacing:.05em}
+
+  /* TOC */
+  nav.toc{margin:46px 0 10px;padding:26px 28px;background:var(--paper2);border:1px solid var(--rule);border-radius:2px}
+  nav.toc h2{font-family:"Courier New",monospace;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent2);margin:0 0 16px}
+  nav.toc ol{margin:0;padding-left:0;counter-reset:toc;list-style:none}
+  nav.toc li{counter-increment:toc;padding:5px 0;border-bottom:1px dotted var(--rule);font-size:16px}
+  nav.toc li:last-child{border-bottom:none}
+  nav.toc li::before{content:counter(toc,decimal-leading-zero);font-family:"Courier New",monospace;color:var(--gold);margin-right:14px;font-size:13px}
+  nav.toc a{color:var(--ink);text-decoration:none}
+  nav.toc a:hover{color:var(--accent)}
+
+  section{padding:60px 0 10px;border-top:1px solid var(--rule);margin-top:30px}
+  section:first-of-type{border-top:none}
+  .secnum{font-family:"Courier New",monospace;font-size:13px;color:var(--gold);letter-spacing:.1em}
+  h2.sect{font-size:32px;margin:6px 0 8px;letter-spacing:-.01em;line-height:1.12}
+  h3{font-size:21px;margin:34px 0 8px;color:var(--accent2)}
+  p{margin:14px 0}
+  strong{font-weight:700}
+  em{font-style:italic}
+
+  .lead{font-size:20px;color:#4a4138}
+
+  /* "you already had this" callout */
+  .had{background:linear-gradient(0deg,var(--paper2),var(--paper2));border-left:4px solid var(--accent2);padding:16px 20px;margin:22px 0;border-radius:0 2px 2px 0}
+  .had .tag{font-family:"Courier New",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent2);display:block;margin-bottom:6px}
+  .had p{margin:6px 0;font-size:16.5px;color:#43423a}
+
+  /* trap box */
+  .trap{background:#2a211c;color:#f0e7d8;padding:20px 22px;margin:26px 0;border-radius:3px;box-shadow:0 6px 22px var(--shadow);position:relative;overflow:hidden}
+  .trap::before{content:"⚠ TRAPPOLA";font-family:"Courier New",monospace;font-size:11px;letter-spacing:.18em;color:#e6b455;display:block;margin-bottom:10px}
+  .trap p{margin:8px 0;font-size:16px;line-height:1.55;color:#ece3d4}
+  .trap .wrong{color:#e88a7d}
+  .trap .right{color:#8fd3bb}
+  .trap b{color:#fff}
+
+  /* check / predict box */
+  .check{border:1.5px dashed var(--accent);border-radius:3px;padding:18px 20px;margin:26px 0;background:rgba(154,59,46,.035)}
+  .check .q{font-family:"Courier New",monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+  .check .qq{font-size:17px;font-weight:600;margin-bottom:14px}
+  .opt{display:block;width:100%;text-align:left;background:var(--paper);border:1px solid var(--rule);border-radius:2px;padding:11px 15px;margin:7px 0;font-family:inherit;font-size:15.5px;color:var(--ink);cursor:pointer;transition:all .15s}
+  .opt:hover{border-color:var(--accent);background:#fff}
+  .opt.correct{background:#e4efe8;border-color:var(--accent2);color:#1f4a3d;font-weight:600}
+  .opt.wrong{background:#f5e1dd;border-color:var(--accent);color:#7d2c22;text-decoration:line-through;opacity:.75}
+  .reveal{display:none;margin-top:14px;padding:14px 16px;background:var(--paper2);border-left:3px solid var(--accent2);font-size:15.5px;border-radius:0 2px 2px 0}
+  .reveal.show{display:block;animation:fade .35s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* flow diagram */
+  .flow{margin:26px 0;padding:22px;background:var(--paper2);border:1px solid var(--rule);border-radius:3px;font-family:"Courier New",monospace;font-size:13.5px;line-height:2.1;overflow-x:auto}
+  .flow .node{display:inline-block;background:#fff;border:1px solid var(--ink);padding:3px 9px;border-radius:2px;margin:2px 0;white-space:nowrap}
+  .flow .arr{color:var(--accent);margin:0 6px;font-weight:700}
+  .flow .hl{background:var(--accent2);color:#fff;border-color:var(--accent2)}
+  .flow .hl2{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* numeric example */
+  .calc{font-family:"Courier New",monospace;font-size:14.5px;background:#22221f;color:#e8e2d4;padding:16px 18px;border-radius:3px;margin:20px 0;line-height:1.7;overflow-x:auto}
+  .calc .c1{color:#e6b455}.calc .c2{color:#8fd3bb}.calc .c3{color:#e88a7d}
+
+  /* key takeaway */
+  .net{margin:30px 0 8px;padding:20px 24px;border:2px solid var(--ink);border-radius:3px;background:var(--paper)}
+  .net .tag{font-family:"Courier New",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:8px}
+  .net p{margin:0;font-size:16.5px}
+
+  /* two axes box */
+  .axes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:24px 0}
+  .axis{padding:16px 18px;border:1px solid var(--rule);border-radius:3px;background:var(--paper2)}
+  .axis h4{margin:0 0 8px;font-family:"Courier New",monospace;font-size:13px;letter-spacing:.05em;color:var(--accent2)}
+  .axis p{font-size:15px;margin:6px 0}
+  @media(max-width:600px){.axes{grid-template-columns:1fr}h1{font-size:34px}body{font-size:17px}}
+
+  .innote{font-size:15px;color:#6b6052;font-style:italic;border-top:1px dotted var(--rule);padding-top:8px;margin-top:18px}
+  .pill{font-family:"Courier New",monospace;font-size:12px;background:var(--ink);color:var(--paper);padding:2px 8px;border-radius:10px;letter-spacing:.04em}
+  footer{margin-top:70px;padding-top:24px;border-top:2px solid var(--ink);font-family:"Courier New",monospace;font-size:12px;color:#7a6f60;letter-spacing:.05em}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Riferimento tecnico · costruito sul tuo modo di ragionare</div>
+  <h1>Come funziona un LLM</h1>
+  <div class="sub">Dalla catena che avevi già descritto nel tuo file del 2023, scendendo sotto ogni passaggio fino al meccanismo completo — più i tre strati aggiunti nel frattempo.</div>
+  <div class="meta">struttura bottom-up · meccanismo prima, analogia dopo · box "non cadere qui" sui punti dove la comprensione si incrina</div>
+</header>
+
+<nav class="toc">
+  <h2>La catena</h2>
+  <ol>
+    <li><a href="#s1">Il punto di partenza: token ed embedding</a></li>
+    <li><a href="#s2">Q, K, V — tre viste della stessa parola</a></li>
+    <li><a href="#s3">Attention: come nasce il nuovo embedding</a></li>
+    <li><a href="#s4">Teste: larghezza in parallelo</a></li>
+    <li><a href="#s5">Layer: profondità in sequenza</a></li>
+    <li><a href="#s6">Dall'embedding finale alla parola: i pesi</a></li>
+    <li><a href="#s7">Strato nuovo · RLHF: il comportamento</a></li>
+    <li><a href="#s8">Strato nuovo · Reasoning: la brutta</a></li>
+    <li><a href="#s9">Strato nuovo · Memoria: il contesto esterno</a></li>
+    <li><a href="#s10">Il filo unico</a></li>
+    <li><a href="#s11">Contesto: numeri e storia</a></li>
+    <li><a href="#s12">Benchmark: risultati, formule, confronto umano</a></li>
+  </ol>
+</nav>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="secnum">01</div>
+  <h2 class="sect">Il punto di partenza: token ed embedding</h2>
+  <div class="had"><span class="tag">Nel tuo file (2023)</span>
+    <p>"GPT assegna a ogni parola un embedding, un vettore di numeri… parole usate in contesti simili finiscono con embedding simili. Una parola non ha un embedding fisso: il significato cambia col contesto."</p>
+  </div>
+  <p class="lead">Quella base era giusta e regge ancora. Fissiamo solo il vocabolario esatto, perché tutto il resto ci poggia.</p>
+  <p>Il testo viene spezzato in <strong>token</strong> — pezzi di parola, non parole intere. Ogni token ha un ID, e una tabella (la <em>lookup</em>) lo trasforma in un <strong>embedding</strong>: un vettore, una lista di numeri. Questo è l'embedding <strong>grezzo</strong> — uguale ogni volta che quel token appare, indipendente dal contesto.</p>
+  <p>Il lavoro di tutto il modello è prendere questo embedding grezzo e trasformarlo, passaggio dopo passaggio, in un embedding <strong>contestualizzato</strong>: che non rappresenta più la parola in astratto, ma il suo ruolo preciso in <em>questa</em> frase. Come arriva fin lì è il resto del report.</p>
+  <div class="net"><span class="tag">Net</span><p>Token → embedding grezzo (dalla lookup, sempre uguale) → … → embedding contestualizzato (il significato nella frase). Tutto ciò che segue serve a fare quella freccia centrale.</p></div>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="secnum">02</div>
+  <h2 class="sect">Q, K, V — tre viste della stessa parola</h2>
+  <div class="had"><span class="tag">Nel tuo file (2023)</span>
+    <p>"Query, Key e Value… si ottengono applicando tre matrici di proiezione apprese (Wq, Wk, Wv). La Query = cosa la parola cerca; la Key = cosa la parola è; la Value = il contenuto che offre."</p>
+  </div>
+  <p class="lead">Avevi i ruoli giusti. Il pezzo che mancava sotto: <strong>cosa sono fatti</strong> Q, K, V, e da dove escono i numeri.</p>
+  <p>Da un embedding <strong>e</strong>, tre matrici di pesi diverse producono tre vettori:</p>
+  <div class="calc">Q = <span class="c1">Wq</span> × e &nbsp;&nbsp;— cosa cerco<br>K = <span class="c2">Wk</span> × e &nbsp;&nbsp;— come mi faccio riconoscere<br>V = <span class="c3">Wv</span> × e &nbsp;&nbsp;— cosa offro come contenuto</div>
+  <p>Q, K, V sono <strong>tutti e tre vettori</strong>, e nascono <strong>tutti e tre dall'embedding intero</strong>. Non da parti diverse di esso. La differenza tra loro non sta in <em>quali</em> numeri dell'embedding usano (usano tutti gli stessi, l'intero vettore), ma in <em>come</em> li trasformano: tre matrici diverse → tre risultati diversi.</p>
+  <p>Le matrici Wq/Wk/Wv sono <strong>pesi</strong>: numeri appresi nel training e poi <strong>fissi</strong>. Un peso è semplicemente un fattore in una somma pesata: dice quanto un input contribuisce a un risultato. "175 miliardi di parametri" = 175 miliardi di questi numeri.</p>
+
+  <div class="trap">
+    <p><b>"L'embedding ha valori associati a Q, altri a K, altri a V."</b></p>
+    <p class="wrong">No. L'embedding è un vettore unico e indiviso.</p>
+    <p class="right">Q usa <em>tutto</em> l'embedding (× Wq). V usa di nuovo <em>tutto</em> l'embedding intero (× Wv). Niente compartimenti. Non esistono "valori associati a Q": esiste un solo embedding, letto per intero tre volte da tre matrici diverse.</p>
+  </div>
+
+  <div class="check" data-q="2a">
+    <div class="q">Verifica</div>
+    <div class="qq">Q e V di una parola si calcolano…</div>
+    <button class="opt" data-c="0">da tre parti diverse dell'embedding</button>
+    <button class="opt" data-c="1">tutti e tre dall'embedding intero, con matrici diverse</button>
+    <button class="opt" data-c="0">dall'embedding intero, con la stessa matrice</button>
+    <div class="reveal">Stesso <em>input</em> (l'embedding intero), <strong>pesi diversi</strong> (Wq ≠ Wv). Stesso punto di partenza, tre trasformazioni distinte.</div>
+  </div>
+
+  <h3>Cosa fa davvero Wq: ricombinare, non riscalare</h3>
+  <p>Il punto su cui è facile sbagliare — e che vale la pena ricostruire da come ci si arriva. L'idea intuitiva è che moltiplicare per Wq <em>riscali</em> l'embedding: alzare le posizioni importanti, abbassare le altre. Cioè ogni numero nuovo dipende solo dal numero vecchio nella <em>stessa</em> casella:</p>
+  <div class="calc"><span class="c1">idea intuitiva (riscalare):</span><br>nuovo₁ = peso·e₁ &nbsp;← guarda solo e₁<br>nuovo₂ = peso·e₂ &nbsp;← guarda solo e₂<br><span style="color:#9a9">ogni casella isolata: puoi solo alzare/abbassare ciò che c'è</span></div>
+  <p>Ma una matrice fa qualcosa di più potente: ogni numero nuovo guarda <strong>tutte</strong> le caselle vecchie, ciascuna con un suo peso.</p>
+  <div class="calc"><span class="c2">cosa fa davvero (ricombinare):</span><br>Q₁ = a·e₁ + b·e₂ + c·e₃ &nbsp;← combina tutto<br>Q₂ = d·e₁ + f·e₂ + g·e₃ &nbsp;← combina tutto<br><br>es. riga = [−1, 1, 0] su e=[2,6,1] → <span class="c2">−2+6 = 4</span><br><span style="color:#9a9">"4" = quanto e₂ supera e₁: una RELAZIONE, non in nessuna casella</span></div>
+  <p>La differenza è sostanziale. Riscalare può solo <em>enfatizzare</em> informazione già presente in una posizione. Ricombinare può <strong>creare</strong> informazione nuova: somme, differenze, mescolanze tra posizioni — cose che nessuna singola casella conteneva. Serve proprio perché l'informazione utile è <em>distribuita</em>: non vive in una posizione da alzare, va costruita combinandone molte.</p>
+
+  <h3>Il modello di lavoro: una riga = una domanda</h3>
+  <p>Da qui l'intuizione giusta per leggere Wq. Pensa a ogni <strong>riga</strong> di Wq come a una "domanda" che la parola vuole porre: <em>Q₁ = quanto cerco un soggetto? Q₂ = cerco un singolare o un plurale?</em> Ogni riga ha pesi alti sulle posizioni dell'embedding <em>utili a costruire quella domanda</em>, e le combina in un numero. Tante righe = tante domande = il vettore Q completo, che impacchetta tutte le ricerche della parola.</p>
+  <p>Due paletti per tenere il modello onesto: <strong>(1)</strong> le posizioni non sono "riferite a Q1" né dedicate — sono caselle <em>condivise</em> che la riga combina in modo utile; la stessa posizione può servire a Q1 e Q2 con pesi diversi. <strong>(2)</strong> una componente = <em>una</em> direzione di ricerca, dà un numero solo: "verbo?" e "soggetto?" sarebbero due componenti distinte, non una.</p>
+
+  <div class="trap">
+    <p><b>"Wq dà più peso alle posizioni dell'embedding importanti per Q (le riscala)."</b></p>
+    <p class="wrong">No — sarebbe un'operazione diagonale, debole: ogni casella resta isolata.</p>
+    <p class="right">Ogni componente di Q è una <em>combinazione di tutte</em> le posizioni dell'embedding, con pesi diversi. Wq <b>ricombina</b> (può sommare, sottrarre, mescolare), non filtra. È coerente col fatto che "niente è associato a una posizione": proprio perché la ricerca è distribuita, va <em>costruita</em> mescolando, non estratta enfatizzando una casella.</p>
+  </div>
+
+  <p class="innote">Disclaimer (nel tuo spirito): "Q1 = cerco un soggetto" è un <em>modello di lavoro</em>, non la realtà. Le componenti di Q sono direzioni che il training ha trovato utili, il loro significato è distribuito e non etichettabile una per una. Ma per capire la meccanica, "una riga = una domanda" è l'intuizione corretta.</p>
+
+  <h3>Le dimensioni (per non sbagliarle)</h3>
+  <p>Conseguenza diretta: Wq <strong>non</strong> è una colonna (n×1). Deve trasformare un vettore in un altro vettore, quindi è una <strong>matrice piena d×n</strong> — d righe (una per "domanda"/componente di Q), n colonne (una per ogni posizione dell'embedding che la riga combina).</p>
+  <div class="calc">e = [3, 7, 1] &nbsp;(embedding, 3×1)<br>Wq = [a b c]  → Q₁ = a·3 + b·7 + c·1 &nbsp;(2×3)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[d e f]  → Q₂ = d·3 + e·7 + f·1<br>Q = [Q₁, Q₂] &nbsp;(2×1)</div>
+  <p>Una n×1 darebbe <em>un numero solo</em>, non un vettore — per questo le matrici hanno molte righe e molte colonne. (Nota: spesso d &lt; n, perché ogni testa lavora su una fetta dimensionale; 8 teste da d=1.536 → concatenate tornano a 12.288.)</p>
+
+  <div class="net"><span class="tag">Net</span><p>Q, K, V = tre vettori, prodotti dall'embedding <em>intero</em> tramite tre matrici di pesi fisse (Wq, Wk, Wv) — tre ruoli diversi perché tre matrici diverse. E ogni matrice <em>ricombina</em> le posizioni (somme/differenze/mescolanze), non le riscala: ogni riga è una "domanda" costruita combinando le caselle utili. Per questo sono matrici piene d×n, non colonne.</p></div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="secnum">03</div>
+  <h2 class="sect">Attention: come nasce il nuovo embedding</h2>
+  <div class="had"><span class="tag">Nel tuo file (2023)</span>
+    <p>"Si calcola quanto la Query di una parola è compatibile con la Key di un'altra (softmax di QKᵀ) → peso di attention. Poi si fa una media pesata dei Value. Es: 50% di sé, 30% di B, 20% di C."</p>
+  </div>
+  <p class="lead">Questo era completo e corretto. Lo rendo solo esplicito in <strong>due tempi</strong>, perché è lì che è facile confondersi su cosa entra dove.</p>
+
+  <h3>Tempo 1 — chi è rilevante (servono Q e K)</h3>
+  <p>Per la parola "lui" in <em>"Mario corre perché lui è in ritardo"</em>: la <strong>Q di "lui"</strong> ("cerco un nome a cui riferirmi") si confronta con la <strong>K di ogni altra parola</strong>. Il confronto è un prodotto scalare: due vettori → <strong>un numero</strong>, alto se allineati. Q di "lui" · K di "Mario" → alto. Q di "lui" · K di "corre" → basso.</p>
+  <p>Si ottiene così un punteggio per ogni parola → softmax → <strong>percentuali di rilevanza</strong> (es. 70% Mario, 10% corre…). <strong>Qui Q e K hanno finito.</strong> Non entrano in ciò che segue.</p>
+
+  <h3>Tempo 2 — cosa si prende (serve V)</h3>
+  <p>Il <strong>nuovo embedding di "lui"</strong> si costruisce mescolando le <strong>V</strong> di tutte le parole, nelle percentuali appena trovate:</p>
+  <div class="calc">V Mario = [10, 2, 8] &nbsp; V lui = [1, 1, 5] &nbsp; pesi: <span class="c1">70% Mario, 30% lui</span><br><br>nuovo e(lui) = 0,70·[10,2,8] + 0,30·[1,1,5]<br>&nbsp;= [7; 1,4; 5,6] + [0,3; 0,3; 1,5]<br>&nbsp;= <span class="c2">[7,3; 1,7; 7,1]</span></div>
+  <p>Il peso di Mario (70%) scala <strong>l'intera V di Mario allo stesso modo</strong> — ogni numero al 70%. Un token = un peso = la sua V intera scalata. Dentro un singolo calcolo non si pesano diversamente le posizioni di una V.</p>
+
+  <div class="trap">
+    <p><b>"Si mescolano Q, K e V per fare il nuovo embedding."</b></p>
+    <p class="wrong">No. Q e K non entrano nella miscela finale.</p>
+    <p class="right">Q e K = la <em>votazione</em> (decidono le percentuali). V = il <em>contenuto votato</em> (l'unico ingrediente versato). Nel bicchiere finisce solo il liquido (V), mai i voti (Q, K). Il nuovo embedding = media pesata delle sole V.</p>
+  </div>
+
+  <div class="trap">
+    <p><b>"Il contenitore è la V di 'lui', dentro ci metto la V di Mario."</b></p>
+    <p class="wrong">No. La V di "lui" non è il contenitore.</p>
+    <p class="right">Il contenitore è il <em>nuovo embedding</em> di "lui" — una cosa diversa da tutte e tre Q/K/V. Dentro ci vanno le V (di Mario, di lui, delle altre) come ingredienti. La V di "lui" è solo una delle V che entrano, di solito la fetta maggiore.</p>
+  </div>
+
+  <div class="check" data-q="3a">
+    <div class="q">Verifica</div>
+    <div class="qq">Quali dei tre (Q/K/V) entrano direttamente nella miscela che forma il nuovo embedding?</div>
+    <button class="opt" data-c="0">tutti e tre in parti uguali</button>
+    <button class="opt" data-c="0">solo Q e K</button>
+    <button class="opt" data-c="1">solo V, dosata dai pesi che Q·K hanno prodotto</button>
+    <div class="reveal">Q·K producono le dosi e poi escono di scena. Solo V viene versata. Il nuovo embedding è una media pesata delle sole V.</div>
+  </div>
+
+  <div class="net"><span class="tag">Net</span><p>Due tempi. Q·K → un numero di rilevanza per ogni parola → percentuali. Poi: nuovo embedding = media pesata delle sole V, con quelle percentuali. Un peso per token, scala la V intera. Voti con Q/K, versi V, il risultato è un vettore nuovo (non una V nuova).</p></div>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="secnum">04</div>
+  <h2 class="sect">Teste: larghezza in parallelo</h2>
+  <div class="had"><span class="tag">Nel tuo file (2023)</span>
+    <p>"Multi-head attention: ogni head e ogni layer ha le proprie matrici Wq, Wk, Wv, che imparano a selezionare aspetti diversi dell'informazione."</p>
+  </div>
+  <p class="lead">Giusto — e qui sta la risposta a "posso prendere aspetti diversi di Mario?". Sì: lo fanno le <strong>teste</strong>.</p>
+  <p>In uno stesso layer ci sono molte teste <strong>in parallelo</strong>, ognuna con le sue Wq/Wk/Wv. Siccome la V è <em>embedding × Wv</em>, e ogni testa ha una <strong>Wv diversa</strong>, ogni testa estrae da Mario una <em>vista diversa</em>: una "Mario-come-soggetto", un'altra "Mario-maschile". Non lo stesso Mario scalato — aspetti diversi, nello stesso istante.</p>
+
+  <h3>Da molte teste a un embedding</h3>
+  <p>Ogni testa produce il <em>suo</em> nuovo embedding di "lui". Da 8 vettori a 1, in due mosse:</p>
+  <div class="flow">
+    <span class="node">8 embedding (uno per testa)</span><span class="arr">→</span><span class="node hl">concatena</span> (affiancati → 1 vettore lungo)<br>
+    <span class="arr">→</span><span class="node hl2">matrice di output</span> (fonde + ricomprime) <span class="arr">→</span><span class="node">1 embedding</span>
+  </div>
+  <p>La <strong>matrice di output</strong> (un'altra matrice di pesi fissa) fa una somma pesata degli 8 contributi: decide quanto di ogni testa tenere, e riporta il vettore alla lunghezza giusta. Le viste parallele ridiventano una parola sola, arricchita.</p>
+  <p class="innote">Un blocco completo di attention ha quindi quattro gruppi di pesi: Wq, Wk, Wv (in ogni testa) + la matrice di output (per fondere le teste). Tutte fisse, tutte apprese.</p>
+
+  <h3>Perché non una sola matrice grande?</h3>
+  <p>Obiezione naturale: se alla fine riconcateno e fondo, tanto valeva usare <em>una</em> Wv da 12.288 invece di 8 da 1.536. Non è equivalente, e il motivo sta nei <strong>pesi di attention</strong>, non nella dimensione finale.</p>
+  <p>La domanda decisiva è: <strong>quanti set di pesi di attention ottieni?</strong></p>
+  <div class="axes">
+    <div class="axis"><h4>UNA MATRICE GRANDE</h4><p>Una sola Q e una sola K per parola → <strong>un solo</strong> punteggio Q·K per coppia. "lui" ascolta "Mario" con <em>un</em> peso, e basta. <strong>Un</strong> pattern di attenzione.</p></div>
+    <div class="axis"><h4>8 TESTE</h4><p>8 Q e 8 K diverse → <strong>8 set</strong> di pesi di attention. "lui" ascolta Mario <em>per il soggetto</em> (testa 1) E "in ritardo" <em>per lo stato</em> (testa 2) E "perché" <em>per la causa</em> (testa 3), tutto insieme.</p></div>
+  </div>
+  <p>Questo è ciò che una matrice unica <strong>non può</strong> fare: con una sola Q/K sei costretto a <em>un</em> pattern di relazione tra le parole. Non puoi mettere in relazione "lui" con Mario <em>e</em> con "in ritardo" per motivi diversi allo stesso tempo, perché hai un solo prodotto scalare. Le teste danno <strong>più prodotti scalari indipendenti → più relazioni simultanee</strong> tra le stesse parole. La concatenazione ricompone questi sguardi multipli, ma lo sguardo multiplo è già nato <em>prima</em>, nei Q·K separati — ed è lì il guadagno.</p>
+
+  <div class="trap">
+    <p><b>"Tanto vale una matrice grande con più righe: stessa dimensione finale, un passaggio in meno."</b></p>
+    <p class="wrong">No — non è la stessa cosa fatta in meno passi.</p>
+    <p class="right">Una matrice grande dà <em>una</em> Q/K → un solo set di pesi di attention (un solo "chi ascolta chi"). 8 teste danno 8 Q/K → 8 pattern di attenzione <em>indipendenti e simultanei</em>. Il punto non è la dimensione del risultato, è il numero di relazioni che puoi tracciare in parallelo. Più sguardi, non un passaggio in più.</p>
+  </div>
+
+  <p class="innote">Analogia: una matrice grande = un lettore che traccia <em>uno</em> schema di collegamenti nella frase. 8 teste = 8 lettori, ognuno traccia uno schema diverso (chi segue i soggetti, chi i tempi, chi le cause), poi si uniscono. Otto lettori vedono strutture che un lettore solo, costretto a una sintesi unica, non può tenere separate.</p>
+
+  <div class="net"><span class="tag">Net</span><p>Le teste guardano aspetti diversi <em>in parallelo</em> nello stesso layer (Wv diverse → V diverse di Mario). Si fondono subito: concatena → matrice di output → un embedding. Non sostituibili da una matrice unica: ogni testa ha un proprio Q·K, quindi più pattern di attention simultanei (irraggiungibili con una Q/K sola). Teste = larghezza.</p></div>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="secnum">05</div>
+  <h2 class="sect">Layer: profondità in sequenza</h2>
+  <div class="had"><span class="tag">Nel tuo file (2023)</span>
+    <p>"Layer bassi = elementi di base (soggetto/oggetto, co-occorrenze); layer alti = relazioni causali, disambiguazione, intenzioni. Ogni layer lavora su una rappresentazione già arricchita."</p>
+  </div>
+  <p class="lead">Esatto, e ora <em>perché</em>: un layer è il pacchetto della sezione 4, <strong>impilato</strong>. L'output di uno è l'input del successivo.</p>
+  <p>Segui "lui":</p>
+  <div class="flow">
+    <span class="node">layer 1</span> riceve "lui" grezzo <span class="arr">→</span> lo collega a Mario <span class="arr">→</span> output: "lui" <span class="hl" style="padding:1px 6px">sa di essere Mario</span><br>
+    <span class="node">layer 2</span> riceve "lui = Mario" <span class="arr">→</span> capisce la causa ("perché in ritardo") <span class="arr">→</span> più ricco<br>
+    <span class="node">layer 3…</span> costruisce sopra, sempre più astratto
+  </div>
+  <p>Il layer 2 può fare ciò che al layer 1 era <strong>impossibile</strong>: capire la relazione causale richiede di sapere già chi è "lui" — informazione che esiste solo <em>dopo</em> il layer 1. La comprensione si costruisce a stadi, ognuno abilitato dal precedente.</p>
+
+  <div class="axes">
+    <div class="axis"><h4>TESTE = larghezza</h4><p>Dentro un layer, in <strong>parallelo</strong>. Più aspetti nello stesso istante. Si fondono subito.</p></div>
+    <div class="axis"><h4>LAYER = profondità</h4><p>Impilati, in <strong>sequenza</strong>. Più stadi, ognuno parte dal risultato del precedente. Non si fondono: si susseguono.</p></div>
+  </div>
+
+  <h3>Cosa viaggia tra un layer e l'altro</h3>
+  <p>Solo <strong>l'embedding</strong>. Q, K, V <strong>non</strong> si trasmettono: sono locali, usa-e-getta dentro ogni layer. Al layer successivo si <strong>ricalcolano da capo</strong>, perché (a) l'embedding in ingresso è cambiato e (b) le matrici del layer sono diverse. Doppio motivo per cui Q/K/V del layer 2 sono nuove.</p>
+
+  <div class="trap">
+    <p><b>"La selettività su parti diverse di Mario la fanno i layer."</b></p>
+    <p class="wrong">No — quella è larghezza, la fanno le teste.</p>
+    <p class="right">"Aspetti diversi <em>adesso</em>" = teste (parallelo). "Raffinare per stadi" = layer (sequenza). Stai prendendo l'asse verticale (layer) per rispondere a una domanda dell'asse orizzontale (teste). Entrambi hanno pesi propri, ma fanno lavori diversi.</p>
+  </div>
+
+  <div class="trap">
+    <p><b>"Il token N+1 parte dall'embedding finale del token N." / "Q si aggiorna ereditando."</b></p>
+    <p class="wrong">No. Niente si eredita verticalmente da una posizione all'altra.</p>
+    <p class="right">Ogni token riparte grezzo dalla lookup. Il calcolo dei token precedenti arriva <em>via attention</em> (sulle loro K/V, che restano fisse), non come embedding di partenza. Il ponte è orizzontale (guardare indietro), non verticale (continuare la pila).</p>
+  </div>
+
+  <div class="net"><span class="tag">Net</span><p>Un layer = il blocco multi-testa, impilato N volte. Ognuno lavora su materiale già elaborato → può fare mosse più profonde. Tra layer viaggia solo l'embedding; Q/K/V sono locali e si rifanno ogni volta. Teste = larghezza, layer = profondità.</p></div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="secnum">06</div>
+  <h2 class="sect">Dall'embedding finale alla parola: i pesi</h2>
+  <div class="had"><span class="tag">Nel tuo file (2023)</span>
+    <p>"Genero una distribuzione di probabilità su tutti i token del vocabolario… scelgo il token più probabile in base al contesto."</p>
+  </div>
+  <p class="lead">Vero. Ecco il meccanismo esatto del passo finale.</p>
+  <p>L'embedding finale dell'<strong>ultimo</strong> token della sequenza (solo quello — è da lì che esce la predizione) passa per un'<strong>ultima matrice di pesi</strong>, grande quanto il vocabolario. Produce un <strong>punteggio per ogni token</strong> (i <em>logit</em>). Softmax → probabilità che sommano a 1 → si campiona → <strong>la parola nuova</strong>.</p>
+  <div class="flow">
+    <span class="node">token grezzo</span><span class="arr">→</span><span class="node">embedding</span><span class="arr">→</span><span class="node">N layer (somme pesate)</span><span class="arr">→</span><span class="node">embedding finale</span><br>
+    <span class="arr">→</span><span class="node hl2">ultima matrice</span><span class="arr">→</span><span class="node">punteggio per ogni parola</span><span class="arr">→</span><span class="node">softmax</span><span class="arr">→</span><span class="node hl">parola</span>
+  </div>
+  <h3>Cosa significano "pesi fissi" e "training"</h3>
+  <p><strong>Fissi all'inference</strong> = quei miliardi di numeri non si toccano mentre generi; ogni token passa per le stesse identiche moltiplicazioni. È il fondamento di "stessa macchina, contesto diverso".</p>
+  <p><strong>Training/backprop</strong> (che il tuo file già descriveva: loss → backpropagation) = <em>trovare</em> i valori di quei numeri perché la distribuzione finale metta probabilità alta sulla parola giusta.</p>
+
+  <div class="trap">
+    <p><b>"La parola esce da tutti i token." / "Un token serve a modificare gli altri."</b></p>
+    <p class="wrong">No.</p>
+    <p class="right">La parola nuova esce <em>solo</em> dall'embedding finale dell'ultimo token. E un token non modifica gli altri: lascia K/V <em>ferme</em> che i token <em>successivi</em> consultano guardando indietro. Direzione: il nuovo guarda il vecchio, mai il contrario. (Quelle K/V ferme, riusate invece di ricalcolarle, sono il <span class="pill">cache</span> che vedi fatturato a parte.)</p>
+  </div>
+
+  <div class="net"><span class="tag">Net</span><p>Predire una parola = catena di moltiplicazioni per pesi che finisce in una distribuzione sul vocabolario, da cui si campiona. Esce solo dall'ultimo token. Pesi fissi a inference; il training serve a fissarne i valori.</p></div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="secnum">07</div>
+  <h2 class="sect">Strato nuovo · RLHF: dove nasce il comportamento</h2>
+  <p class="lead">Il tuo file finiva al pre-training (predici la parola, loss, backprop). Quello costruisce un <strong>completatore di testo</strong>: sa continuare, non sa <em>rispondere</em>. Manca un secondo addestramento.</p>
+  <p>Un modello solo-pre-trained, davanti a "Spiegami la relatività", potrebbe continuare con un'<em>altra domanda</em> — perché nei dati a volte dopo quella frase veniva un'altra domanda. Sa cosa viene statisticamente dopo, non che tu vuoi una risposta. L'<strong>RLHF</strong> colma questo in tre passi:</p>
+  <p><strong>1. Fine-tuning supervisionato</strong> — esempi umani di "come si risponde bene" (domanda → risposta ideale). Sposta la distribuzione verso il rispondere.</p>
+  <p><strong>2. Reward model</strong> — per una domanda si generano più risposte, umani le ordinano dal meglio al peggio, e con queste preferenze si addestra un <em>secondo</em> modello che dà un <strong>punteggio</strong> a una risposta ("quanto piacerebbe a un umano?"). Un giudizio soggettivo trasformato in funzione numerica.</p>
+  <p><strong>3. Reinforcement learning</strong> — il modello genera, il reward model valuta, si aggiornano i pesi per massimizzare il punteggio. Non c'è più "la parola corretta": c'è un punteggio da alzare.</p>
+  <h3>Quante persone, e come generalizza</h3>
+  <p>Pochissime rispetto al pre-training: <strong>centinaia di annotatori</strong>, da decine di migliaia fino a ~1 milione di confronti. Funziona per due livelli: il reward model <strong>generalizza via embedding</strong> (risposte di qualità simile → rappresentazioni vicine → punteggio coerente anche su risposte mai viste); e poi <strong>amplifica</strong> — quel "palato" automatico valuta milioni di risposte auto-generate che nessun umano ha visto. Pochi giudizi umani non servono a valutare ogni risposta, servono a <em>costruire il giudice</em>.</p>
+  <p>Il modello "sa di essere nel turno assistant" perché nel contesto ci sono <strong>token di ruolo</strong> (&lt;user&gt;, &lt;assistant&gt;): non è la posizione a dirgli come comportarsi, è il marcatore di ruolo su cui fa attention. Lì si "accende" il comportamento da RLHF.</p>
+
+  <div class="trap">
+    <p><b>"Il modello ottimizza la qualità reale."</b></p>
+    <p class="wrong">No: ottimizza il <em>punteggio del reward model</em>, un proxy.</p>
+    <p class="right">Se il reward model premia un proxy imperfetto (es. "risposte lunghe e sicure piacciono"), il modello impara a essere lungo e assertivo anche quando sbaglia — <span class="pill">reward hacking</span>. È il tuo problema da econometria: si ottimizza la misura osservabile, non il concetto latente. Da qui molti difetti sistematici (verbosità, eccesso di sicurezza).</p>
+  </div>
+
+  <div class="net"><span class="tag">Net</span><p>Pre-training = competenza linguistica. RLHF = comportamento, scolpito nei pesi da preferenze umane. Centinaia di persone bastano perché costruiscono un reward model che generalizza e amplifica. Prezzo: si ottimizza un proxy, non la qualità.</p></div>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="secnum">08</div>
+  <h2 class="sect">Strato nuovo · Reasoning: la brutta</h2>
+  <p class="lead">Differenza unica rispetto a un modello normale: prima di scrivere la risposta, scrive una lunga <strong>brutta per sé stesso</strong> — passaggi, calcoli, verifiche — e solo dopo la risposta.</p>
+  <h3>Perché rende più preciso</h3>
+  <p>Per produrre <em>un</em> token il modello ha calcolo <strong>fisso</strong>: una passata attraverso i suoi N layer. Un problema che richiede 5 passi seriali non ci sta in una sola passata → il modello, costretto a rispondere subito, <strong>indovina</strong> col pattern superficiale.</p>
+  <p>Scrivendo un passaggio come <strong>token</strong>, il modello lo "salva": la passata successiva riparte da lì (guardando indietro, sez. 5). Così concatena passate: <strong>10 token di brutta = ~10 passate di layer applicate al problema</strong>, non una. Converte <em>profondità</em> (layer fissi, non aumentabili) in <em>lunghezza</em> (token, liberi).</p>
+  <div class="calc"><span class="c3">subito:</span> "3 macchine, 3 pezzi, 3 min → 100 pezzi in 100 min?" → spara <span class="c3">"100"</span> (pattern, sbagliato)<br><span class="c2">brutta:</span> "1 macchina → 1 pezzo/3min" → "in 100min ~33" → "100/33 ≈ 3" → <span class="c2">"3"</span></div>
+  <p>Addestrato con <strong>RL</strong> (come la sez. 7) ma con reward diverso: la <em>correttezza</em> verificabile (matematica, codice). Le catene che arrivano alla soluzione vengono rinforzate. Non gli si scrivono i passaggi: impara da sé a scomporre, verificare, tornare indietro.</p>
+  <h3>I pesi, e come si ferma</h3>
+  <p>I pesi sono spinti a <strong>generare</strong> i pattern del ragionamento (non a "cercarli"). Dopo una domanda difficile, i token probabili sono quelli di brutta; quando la brutta <em>contiene già</em> la catena risolutiva, diventa probabile un token di transizione ("quindi la risposta è") → passa alla risposta. Lo <strong>stop emerge dal contenuto</strong> letto via attention, non da una regola di lunghezza. Non infallibile (si ferma presto, o va in loop) → i sistemi mettono un tetto massimo esterno.</p>
+
+  <div class="trap">
+    <p><b>"A volte i pesi predicono brutta, a volte risposta — quindi i pesi cambiano."</b></p>
+    <p class="wrong">No. I pesi sono fissi e deterministici dato il contesto.</p>
+    <p class="right">Cambia il <em>contesto</em> a ogni token (cresce con ciò che è stato scritto). La stessa funzione fissa, su uno stato di ragionamento <em>incompleto</em>, rende probabile un altro passo; su uno stato <em>completo</em>, la risposta. Brutta/risposta non sono due modalità: sono entrambe "il prossimo token più probabile", in contesti diversi. (La prova: lo stop precoce esiste → non c'è un valutatore a monte, solo generazione continua.)</p>
+  </div>
+
+  <p class="innote">Costo: i token di brutta sono <em>output</em>, quindi fatturati, anche quelli non mostrati. È perché un modello reasoning costa di più a parità di risposta visibile — la voce "token output" del tuo report tesi.</p>
+
+  <div class="net"><span class="tag">Net</span><p>Reasoning = una fase di brutta prima della risposta. Ogni token di brutta compra una passata di layer, concatenando calcolo: converte profondità in lunghezza. Stesso motore, usato più a lungo. Addestrato con RL sulla correttezza. Si ferma quando il contenuto rende probabile il token di chiusura.</p></div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="secnum">09</div>
+  <h2 class="sect">Strato nuovo · Memoria: il contesto esterno</h2>
+  <p class="lead">Assioma dal tuo file: a inference i pesi sono <strong>congelati</strong>. Quindi il modello <em>non può</em> aver imparato qualcosa su di te — tu non eri nei dati di training.</p>
+  <p>Resta una sola possibilità meccanica: le informazioni su di te sono <strong>nel contesto, come token</strong>, reinserite ogni volta. "Il modello mi conosce" = "il sistema rimette nel contesto un testo che mi descrive, e il modello ci fa attention sopra". Due meccanismi da non confondere:</p>
+  <div class="axes">
+    <div class="axis"><h4>(A) FINE-TUNING</h4><p>Modifica i <strong>pesi</strong>. Permanente, vale per tutti. <em>Non</em> è ciò che succede quando ricorda le tue preferenze.</p></div>
+    <div class="axis"><h4>(B) IN-CONTEXT</h4><p>Mette testo nel <strong>contesto</strong>. Pesi intatti. Temporaneo, specifico, cancellabile. <em>Questo</em> è la personalizzazione.</p></div>
+  </div>
+  <h3>La memoria tra conversazioni</h3>
+  <p>Un <strong>database esterno</strong> al modello. Quando emerge un fatto saliente su di te, il sistema lo salva fuori; all'inizio di ogni nuova chat lo <strong>reincolla nel contesto</strong> prima che tu scriva. Il modello resta l'amnesiaco congelato; è il sistema che gli mette davanti la cartella, ogni volta.</p>
+  <p><strong>Lettura (retrieval)</strong> = problema di <em>similarità</em>: un <span class="pill">embedding model</span> separato confronta il vettore della tua domanda coi vettori delle memorie (cosine similarity), pesca i più vicini (+ recency, importanza, budget di contesto).</p>
+  <p><strong>Scrittura (cosa salvare)</strong> = problema di <em>giudizio</em>: un altro modello <em>legge</em> la conversazione e <em>scrive</em> cosa vale la pena ricordare (stabile, riguarda l'utente, saliente, non ridondante). Non geometria — comprensione.</p>
+
+  <div class="trap">
+    <p><b>"La scrittura sceglie guardando le posizioni dell'embedding associate a 'personale'/'utile'."</b></p>
+    <p class="wrong">No — stai esportando la geometria della lettura nella scrittura.</p>
+    <p class="right">Gli embedding non hanno assi etichettati (lo dicevi tu nel 2023: i token non hanno etichette semantiche). E la scrittura non è geometrica: è un LLM che <em>comprende il testo</em> e giudica cosa salvare. Lettura = similarità tra vettori. Scrittura = giudizio generativo. Nature diverse.</p>
+  </div>
+
+  <p class="innote">Conseguenza pratica: poiché entrambe le selezioni sono automatiche e fallibili, il controllo certo ce l'hai rendendo esplicito ("ricorda X") o editando a mano la memoria. È anche perché un permesso dato in una chat non "trasferisce": non c'è un "lui" persistente, c'è un contesto ricostruito ogni volta.</p>
+
+  <div class="net"><span class="tag">Net</span><p>Il modello non ti conosce e non può: è congelato. La personalizzazione è testo nel contesto (B), mai modifica dei pesi (A). La memoria è un database esterno reincollato a ogni chat — infrastruttura attorno al modello. Lettura = similarità, scrittura = giudizio.</p></div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="secnum">10</div>
+  <h2 class="sect">Il filo unico</h2>
+  <p class="lead">Il motore che avevi descritto nel 2023 — embedding, Q/K/V, attention, teste, layer — <strong>non è mai cambiato</strong>. Ogni "novità" del 2026 è qualcosa costruito <em>attorno</em> a quel motore, mai una modifica del motore.</p>
+  <div class="flow" style="line-height:2.4">
+    <span class="node hl2">RLHF</span> → comportamento scolpito nei <strong>pesi</strong> (un nuovo addestramento)<br>
+    <span class="node hl2">Reasoning</span> → passaggi di calcolo <strong>nel contesto</strong>, generati dal modello per sé<br>
+    <span class="node hl2">Memoria</span> → fatti su di te <strong>nel contesto</strong>, via database esterno
+  </div>
+  <p>Due dei tre agiscono sullo stesso punto: <strong>cosa entra nel contesto</strong>. Il reasoning lo riempie con ciò che il modello scrive a sé stesso; la memoria con ciò che il sistema scrive su di te. È anche perché <em>context window</em> e <em>prompt caching</em> contano così tanto: in un sistema dove tutto passa per il contesto, gestire il contesto <em>è</em> il sistema.</p>
+  <p>Ed è la ragione per cui il tuo documento di un anno fa regge ancora: il nucleo che avevi descritto è rimasto il nucleo. Tutto il resto è leva applicata su quel nucleo.</p>
+  <div class="net"><span class="tag">Net finale</span><p>Un solo motore (Transformer), invariato. Tre strati sopra: uno nei pesi (RLHF), due nel contesto (reasoning, memoria). Il contesto è la leva. Il tuo file aveva il motore; questo report ha aggiunto gli strati.</p></div>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="secnum">11</div>
+  <h2 class="sect">Contesto: numeri e storia</h2>
+  <div class="had"><span class="tag">Nel tuo file (2023)</span>
+    <p>Avevi una sezione "un po' di numeri" (GPT-3: 300 mld token, vocab 50k, embedding 12.288, 96 layer × 96 head, ~34 giorni su A100, ~3.640 petaflop/s-day, 1.000-2.000 MWh) e una sezione storica (Transformer 2017 → GPT-1/2/3/4, OpenAI, NVIDIA, Microsoft, brevetti).</p>
+  </div>
+  <p class="lead">Li reintegro aggiornati al 2026. Ma una premessa che <em>è</em> il dato più importante: dal 2023 i lab hanno <strong>smesso di pubblicare</strong> parametri e compute dei modelli di punta. GPT-3 (175 mld) è stato l'ultimo flagship con numeri ufficiali chiari. Dal 2026 quasi tutte le cifre sono <strong>stime</strong> o non dichiarate — per ragioni competitive e di sicurezza. Quindi sotto distinguo i numeri <em>certi</em> (storici, GPT-3) dalle <em>stime</em>.</p>
+
+  <h3>I numeri del tuo file — cosa regge e cosa è datato</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:15px;margin:18px 0">
+    <tr style="border-bottom:2px solid var(--ink)"><th style="text-align:left;padding:8px 6px;font-family:'Courier New',monospace;font-size:12px;letter-spacing:.05em">Voce (2023)</th><th style="text-align:left;padding:8px 6px;font-family:'Courier New',monospace;font-size:12px">Stato 2026</th></tr>
+    <tr style="border-bottom:1px solid var(--rule)"><td style="padding:8px 6px">Vocab ~50.000 token</td><td style="padding:8px 6px">Datato → oggi ~100.000-200.000, tokenizer migliori, meno penalizzanti per l'italiano</td></tr>
+    <tr style="border-bottom:1px solid var(--rule)"><td style="padding:8px 6px">175 mld parametri (GPT-3)</td><td style="padding:8px 6px">Ancora il riferimento storico certo. I flagship 2026 non dichiarano i parametri</td></tr>
+    <tr style="border-bottom:1px solid var(--rule)"><td style="padding:8px 6px">96 layer × 96 head, embedding 12.288</td><td style="padding:8px 6px">Specifici di GPT-3. I modelli moderni sono più grandi ma le cifre esatte non sono pubbliche</td></tr>
+    <tr style="border-bottom:1px solid var(--rule)"><td style="padding:8px 6px">Context window (implicito, piccolo)</td><td style="padding:8px 6px"><strong>Il cambiamento più grosso:</strong> oggi i flagship arrivano a <strong>~1 milione di token</strong> di contesto. Coerente col "filo unico": il contesto è la leva, e l'hanno allargato enormemente</td></tr>
+    <tr><td style="padding:8px 6px">~3.640 petaflop/s-day, 1-2 mila MWh</td><td style="padding:8px 6px">Ordine di grandezza GPT-3. Il compute dei flagship attuali è stimato molto superiore, ma non dichiarato</td></tr>
+  </table>
+  <p>Un'aggiunta concettuale che il tuo file non aveva e che oggi conta: molti modelli di punta usano <strong>Mixture of Experts (MoE)</strong> — il conteggio "parametri totali" (es. ~1 trilione) si separa da quelli "attivi per token" (es. 30-50 mld). Cioè il modello è enorme ma a ogni token ne usa solo una frazione. Per questo "quanti parametri" è diventato ambiguo: totali o attivi?</p>
+
+  <h3>La storia — dal tuo file a oggi</h3>
+  <p><strong>Quello che avevi (regge tutto):</strong> 2017 paper <em>Attention is All You Need</em> (Google) → il Transformer. OpenAI (fondata 2015) → GPT-1 (2018), GPT-2 (2019, inizialmente non rilasciato per timore disinformazione), GPT-3 (2020, 175 mld), GPT-4 (2023). NVIDIA (le GPU), Microsoft (partnership 2019, >$10 mld, integrazione nei prodotti). Né OpenAI né Google hanno brevettato l'architettura (open dal 2017; il valore sta nell'infrastruttura e nei dati, non nel modello astratto). Tutto corretto e ancora valido.</p>
+  <p><strong>Cosa è successo dal 2023 a oggi (2026):</strong></p>
+  <p>Il salto principale è il passaggio dall'<em>era GPT-4</em> all'<em>era del reasoning</em>: i modelli che fanno la brutta (sez. 8) sono diventati lo standard dei flagship, con "sforzo di ragionamento" configurabile. La famiglia <strong>GPT-5</strong> (rilasciata lungo il 2025-2026) ha segnato questo stacco — al 2026 si è già a versioni come GPT-5.4 (marzo) e 5.5 (aprile), con la fusione tra linea generale e linea coding e l'arrivo del <em>computer use</em> nativo.</p>
+  <p>Il campo non è più OpenAI da solo: <strong>Anthropic</strong> (fondata da ex-OpenAI, focus su sicurezza) con la famiglia <strong>Claude</strong> — incluso il modello con cui stai parlando — ha preso la testa delle classifiche in più momenti dal 2024; <strong>Google</strong> con Gemini; e una forte ondata <strong>open-source</strong> (DeepSeek, Llama, Kimi) che offre modelli self-hostabili competitivi. Il tuo file raccontava un monopolio di fatto; oggi è un oligopolio conteso con un'ala aperta.</p>
+  <p class="innote">Nota di metodo (nel tuo spirito): dove un anno fa potevi citare cifre ufficiali, oggi il dato onesto è spesso "non dichiarato / stimato". Riportare una stima come fosse certa sarebbe un errore — la trasparenza sui numeri è regredita mentre i modelli avanzavano.</p>
+
+  <div class="net"><span class="tag">Net</span><p>I tuoi numeri GPT-3 reggono come storia; vocab e contesto sono i più datati (oggi ~100-200k token di vocab, ~1M di context window). I flagship 2026 non pubblicano più parametri/compute → quasi tutto è stima, complicato anche dal MoE (totali vs attivi). Storia: tutto confermato fino a GPT-4; dal 2023 → era del reasoning, famiglia GPT-5, e un campo ora conteso (Anthropic/Claude, Google, open-source) invece del quasi-monopolio OpenAI.</p></div>
+</section>
+
+
+<!-- 12 -->
+<section id="s12">
+  <div class="secnum">12</div>
+  <h2 class="sect">Benchmark: tre test che dicono cose diverse</h2>
+
+  <p class="lead">Terrei solo tre benchmark, perché insieme coprono i tre piani che contano davvero: <strong>conoscenza scientifica esperta</strong>, <strong>lavoro professionale da ufficio</strong>, e <strong>adattamento astratto a regole nuove</strong>. Così eviti una classifica infinita e fai capire cosa i modelli sanno fare meglio degli umani — e dove no.</p>
+
+  <div class="had"><span class="tag">Snapshot</span>
+    <p>Dati aggiornati al <strong>15 luglio 2026</strong>. Le leaderboard cambiano rapidamente: i numeri qui vanno letti come fotografia del momento, non come verità permanente. La cosa importante non è solo il punteggio, ma <em>come</em> viene calcolato.</p>
+  </div>
+
+  <h3>La mappa in una tabella</h3>
+
+  <table style="width:100%;border-collapse:collapse;font-size:13.5px;margin:18px 0">
+    <tr style="border-bottom:2px solid var(--ink)">
+      <th style="text-align:left;padding:8px 5px;font-family:'Courier New',monospace;font-size:11px;letter-spacing:.05em">Benchmark</th>
+      <th style="text-align:left;padding:8px 5px;font-family:'Courier New',monospace;font-size:11px;letter-spacing:.05em">Cosa misura</th>
+      <th style="text-align:left;padding:8px 5px;font-family:'Courier New',monospace;font-size:11px;letter-spacing:.05em">Risultati top</th>
+      <th style="text-align:left;padding:8px 5px;font-family:'Courier New',monospace;font-size:11px;letter-spacing:.05em">Confronto umano</th>
+    </tr>
+    <tr style="border-bottom:1px solid var(--rule)">
+      <td style="padding:8px 5px"><strong>GPQA Diamond</strong><br><span class="pill">PhD science</span></td>
+      <td style="padding:8px 5px">198 domande a scelta multipla in biologia, chimica e fisica. Score = risposte corrette / 198. Random = 25%.</td>
+      <td style="padding:8px 5px">GPT-5.6 Sol: <strong>94,6%</strong><br>Claude Mythos Preview: <strong>94,6%</strong><br>Claude Fable 5: <strong>92,6%</strong></td>
+      <td style="padding:8px 5px">Esperti PhD reclutati da OpenAI: <strong>69,7%</strong>. Qui i modelli top battono l'esperto umano nel formato quiz chiuso.</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--rule)">
+      <td style="padding:8px 5px"><strong>GDPval / GDPval-AA v2</strong><br><span class="pill">lavoro knowledge</span></td>
+      <td style="padding:8px 5px">Deliverable professionali: documenti, slide, fogli, diagrammi, analisi. Prima: win/tie contro umano. Ora: Elo su confronti pairwise.</td>
+      <td style="padding:8px 5px">Originale: Claude Opus 4.1 <strong>47,6%</strong> win/tie; GPT-5 high circa <strong>38,8%</strong>.<br><br>GDPval-AA v2: Claude Fable 5 <strong>1760 Elo</strong>; GPT-5.6 Sol <strong>1747,8 Elo</strong>.</td>
+      <td style="padding:8px 5px">È il confronto più vicino al professionista: i task sono creati da esperti con 14 anni medi di esperienza. Ma resta one-shot: non misura cliente, iterazione, responsabilità.</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 5px"><strong>ARC-AGI-3</strong><br><span class="pill">astrazione nuova</span></td>
+      <td style="padding:8px 5px">Ambienti interattivi nuovi: l'agente deve esplorare, inferire regole, correggere ipotesi e pianificare. Score = ambienti risolti / ambienti totali.</td>
+      <td style="padding:8px 5px">GPT-5.6 Sol Max: <strong>7,8%</strong><br>GPT-5.5: <strong>0,43%</strong><br>Claude Opus 4.8: <strong>1,5%</strong></td>
+      <td style="padding:8px 5px">Nel paper ARC-AGI-3 gli ambienti sono calibrati con test umani e risultano risolvibili da umani; i sistemi frontier restano molto sotto. Qui gli umani vincono ancora nettamente.</td>
+    </tr>
+  </table>
+
+  <h3>1 · GPQA Diamond: domande da PhD, ma chiuse</h3>
+
+  <p><strong>Perché lo terrei:</strong> è il benchmark più pulito per dire “il modello batte esperti umani su conoscenza scientifica chiusa”. Non misura fare ricerca, scrivere un paper o progettare un esperimento; misura rispondere a domande difficili, verificabili, in scienze dure.</p>
+
+  <div class="calc">
+    <span class="c2">score GPQA</span> = risposte corrette / 198<br>
+    94,6% ≈ 187 risposte corrette su 198<br>
+    random = 25% &nbsp; | &nbsp; PhD human baseline = 69,7%
+  </div>
+
+  <p><strong>Esempio del tipo di domanda:</strong> una domanda illustrativa del paper descrive una reazione di un composto organico liquido formato solo da carbonio e idrogeno, condotta a 80°C e 20 bar per 24 ore; poi parla di segnali NMR che si spostano di tre-quattro unità e chiede quali composti, identificati tramite posizione nella tavola periodica e usati anche nel processo industriale corrispondente, siano stati probabilmente aggiunti in piccole quantità. Non è una domanda “da sapere a memoria”: devi riconoscere chimica organica, spettroscopia e processo industriale sottostante.</p>
+
+  <div class="axes">
+    <div class="axis">
+      <h4>Cosa dimostra</h4>
+      <p>Su quiz scientifici chiusi, i frontier model sono già oltre il singolo esperto PhD medio del benchmark. GPT-5.6 Sol e Claude Mythos Preview sono entrambi al 94,6%; Claude Fable 5 è al 92,6%.</p>
+    </div>
+    <div class="axis">
+      <h4>Cosa non dimostra</h4>
+      <p>Non dimostra che il modello sia un ricercatore scientifico autonomo. Non misura scelta del problema, esperimento, laboratorio, peer review, responsabilità o scoperta aperta.</p>
+    </div>
+  </div>
+
+  <h3>2 · GDPval: dal “quasi umano” al punteggio Elo</h3>
+
+  <p><strong>Perché lo terrei:</strong> è molto più vicino al lavoro reale rispetto ai quiz. GDPval non chiede una lettera A/B/C/D: chiede di produrre un deliverable professionale, come una presentazione, un foglio Excel, un documento, un diagramma o un'analisi. I task coprono <strong>44 occupazioni</strong> e <strong>9 settori</strong>, e sono costruiti da professionisti con in media <strong>14 anni di esperienza</strong>.</p>
+
+  <div class="flow" style="line-height:2.25">
+    <span class="node">GDPval originale</span>
+    <span class="arr">→</span>
+    confronto cieco tra <span class="node hl">deliverable AI</span> e <span class="node hl2">deliverable umano esperto</span><br>
+    <span class="arr">→</span>
+    score = quante volte l'AI è giudicata migliore o pari all'umano
+  </div>
+
+  <p><strong>Com'era prima:</strong> nella versione originale, sul gold set da 220 task, Claude Opus 4.1 fu il migliore: i suoi output vennero giudicati <strong>migliori o pari all'umano nel 47,6%</strong> dei confronti. GPT-5 high era circa al <strong>38,8%</strong>. Quindi l'umano esperto restava sopra nella maggioranza dei task, ma il gap si era già ridotto molto.</p>
+
+  <div class="calc">
+    <span class="c1">GDPval originale</span><br>
+    Claude Opus 4.1: 47,6% win/tie vs umano esperto<br>
+    GPT-5 high: circa 38,8% win/tie vs umano esperto<br>
+    GPT-4o: circa 12,4% win/tie vs umano esperto
+  </div>
+
+  <p><strong>Com'è ora:</strong> GDPval-AA v2 usa una metodologia diversa. I modelli lavorano in un ambiente agentico con shell e browsing, producono file, poi gli output vengono confrontati alla cieca e aggregati in un rating <strong>Elo</strong>. La baseline umana è ancorata a <strong>1000 Elo</strong>. Qui Claude Fable 5 è a <strong>1760 Elo</strong> e GPT-5.6 Sol a <strong>1747,8 Elo</strong>.</p>
+
+  <div class="calc">
+    <span class="c2">probabilità Elo attesa</span> = 1 / (1 + 10^((Elo_umano - Elo_modello)/400))<br><br>
+    Claude Fable 5: 1760 Elo → ~98,8% atteso contro baseline 1000<br>
+    GPT-5.6 Sol: 1747,8 Elo → ~98,7% atteso contro baseline 1000<br>
+    Claude Opus 4.8: 1600,1 Elo → ~96,9% atteso contro baseline 1000<br>
+    GPT-5.5: 1493,7 Elo → ~94,5% atteso contro baseline 1000
+  </div>
+
+  <div class="trap">
+    <p><b>“1760 Elo vuol dire che il modello è bravo 1,76 volte un umano.”</b></p>
+    <p class="wrong">No. Elo non è una percentuale di bravura assoluta e non è lineare.</p>
+    <p class="right">Elo significa probabilità attesa di vincere confronti pairwise secondo quella metodologia. Se un modello ha 1760 e la baseline umana è 1000, la formula Elo dà circa 98,8% di probabilità attesa contro quella baseline. Però non è direttamente confrontabile con il 47,6% del GDPval originale, perché protocollo, strumenti e giudice sono diversi.</p>
+  </div>
+
+  <p><strong>Esempio GDPval, finance/compliance:</strong> il modello riceve un incarico da auditor: deve controllare metriche di rischio anti-financial crime contenute in uno spreadsheet, confrontare dati di Q2 e Q3 2024, verificare accuratezza e coerenza, poi produrre un deliverable professionale con osservazioni, controlli e conclusioni. Non deve solo rispondere a una domanda: deve leggere file, ragionare sui dati e consegnare un output da lavoro.</p>
+
+  <p><strong>Altro esempio GDPval, commerciale/operativo:</strong> il modello impersona un account manager di un grossista medico internazionale. Ha una quotazione Excel già inviata a un cliente, riceve quantità aggiornate e file di riferimento, e deve produrre una nuova quotazione coerente. Qui il lavoro è operativo: leggere file, aggiornare quantità e prezzi, mantenere formato e logica commerciale.</p>
+
+  <p><strong>Esempi GDPval-AA v2:</strong> creare uno stage plot per una band in tour, preparare una lista operativa giornaliera per retail, disegnare uno schema di circuito E-stop. Questo è molto più simile a “lavoro da ufficio” rispetto a MMLU o GPQA, perché il risultato non è una lettera corretta ma un file o documento giudicabile.</p>
+
+  <div class="axes">
+    <div class="axis">
+      <h4>Cosa dimostra</h4>
+      <p>I frontier model sono già molto vicini — e in alcuni setting sopra — al deliverable statico di professionisti esperti. Sono forti quando il task è scritto bene e il risultato è un file/documento verificabile.</p>
+    </div>
+    <div class="axis">
+      <h4>Cosa non dimostra</h4>
+      <p>Non dimostra che il modello “faccia il lavoro” completo. Il professionista reale capisce il brief, fa domande, parla col cliente, itera, gestisce trade-off, firma decisioni e si prende responsabilità.</p>
+    </div>
+  </div>
+
+  <h3>3 · ARC-AGI-3: dove gli umani restano davanti</h3>
+
+  <p><strong>Perché lo terrei:</strong> è il benchmark che bilancia la narrativa. GPQA e GDPval fanno sembrare i modelli già sovrumani; ARC-AGI-3 mostra dove sono ancora fragili: apprendere una regola nuova, in un ambiente nuovo, con pochi tentativi, senza linguaggio o conoscenza enciclopedica.</p>
+
+  <div class="flow" style="line-height:2.25">
+    <span class="node">osservo ambiente nuovo</span>
+    <span class="arr">→</span>
+    <span class="node hl">faccio ipotesi sulla regola</span>
+    <span class="arr">→</span>
+    <span class="node">agisco</span>
+    <span class="arr">→</span>
+    <span class="node hl2">vedo feedback</span>
+    <span class="arr">→</span>
+    <span class="node">ripianifico</span>
+  </div>
+
+  <p>Il punto è vicino a ciò che discutevamo sul reinforcement learning, ma al test i pesi non cambiano. Il modello deve fare <strong>apprendimento al volo nel contesto</strong>: capire la regola del singolo ambiente e adattarsi. Gli umani lo fanno molto bene; i LLM molto meno.</p>
+
+  <p><strong>Esempio ARC-AGI-3, stilizzato:</strong> l'agente entra in una piccola griglia colorata senza istruzioni testuali. Può muoversi, cliccare o interagire con celle. All'inizio non sa quale sia l'obiettivo. Provando, scopre che toccare un quadrato blu apre un passaggio, che i blocchi rossi bloccano il movimento e che una certa configurazione di colori fa comparire l'uscita. Deve quindi inferire la regola dell'ambiente, costruirsi un modello interno e completare il gioco in poche azioni.</p>
+
+  <div class="trap">
+    <p><b>“Ma allora ARC-AGI-3 è reinforcement learning?”</b></p>
+    <p class="wrong">Non nel senso tecnico del training: durante il benchmark i pesi non vengono aggiornati.</p>
+    <p class="right">Assomiglia al RL perché c'è osservazione → azione → feedback → nuova ipotesi. Ma qui il learning deve avvenire <em>nel contesto</em>, al momento del test. È proprio questo che lo rende duro per i LLM: non basta recuperare conoscenza già appresa nei pesi.</p>
+  </div>
+
+  <div class="calc">
+    <span class="c3">ARC-AGI-3</span><br>
+    GPT-5.6 Sol Max: 7,8%<br>
+    GPT-5.5: 0,43%<br>
+    Claude Opus 4.8: 1,5%<br>
+    Umani: ambienti calibrati come risolvibili da umani nei test di costruzione
+  </div>
+
+  <div class="axes">
+    <div class="axis">
+      <h4>Cosa dimostra</h4>
+      <p>Qui gli umani sono ancora molto più robusti. Non serve sapere più chimica o codice: serve inferire regole nuove, testare ipotesi e correggere strategia.</p>
+    </div>
+    <div class="axis">
+      <h4>Perché è importante</h4>
+      <p>È il tipo di abilità che manca quando diciamo “AGI”: non solo sapere molte cose, ma adattarsi efficientemente a problemi mai visti.</p>
+    </div>
+  </div>
+
+  <div class="check" data-q="12a">
+    <div class="q">Verifica</div>
+    <div class="qq">Quale benchmark è il migliore per mostrare che i LLM sono ancora deboli nell'adattamento a regole nuove?</div>
+    <button class="opt" data-c="0">GPQA Diamond</button>
+    <button class="opt" data-c="0">GDPval</button>
+    <button class="opt" data-c="1">ARC-AGI-3</button>
+    <div class="reveal">Esatto. GPQA misura scienza PhD chiusa; GDPval misura deliverable professionali; ARC-AGI-3 misura adattamento interattivo a regole nuove, dove gli umani restano nettamente avanti.</div>
+  </div>
+
+  <div class="net"><span class="tag">Net finale</span><p>Con tre benchmark racconti bene l'intera storia: <strong>GPQA Diamond</strong> mostra che i modelli top sono già sopra esperti PhD su domande scientifiche chiuse; <strong>GDPval</strong> mostra che sono vicini o superiori a professionisti esperti su deliverable statici ben specificati; <strong>ARC-AGI-3</strong> mostra che gli umani vincono ancora quando serve capire regole nuove, esplorare, correggere ipotesi e adattarsi senza esempi massicci.</p></div>
+
+  <p class="innote">
+    Fonti principali: 
+    <a href="https://epoch.ai/benchmarks/gpqa-diamond" target="_blank" rel="noopener">Epoch AI GPQA Diamond</a>,
+    <a href="https://openai.com/index/gpt-5-6/" target="_blank" rel="noopener">OpenAI GPT-5.6 benchmark table</a>,
+    <a href="https://openai.com/index/gdpval/" target="_blank" rel="noopener">OpenAI GDPval</a>,
+    <a href="https://huggingface.co/datasets/openai/gdpval" target="_blank" rel="noopener">dataset pubblico GDPval</a>,
+    <a href="https://artificialanalysis.ai/evaluations/gdpval-aa" target="_blank" rel="noopener">Artificial Analysis GDPval-AA v2</a>,
+    <a href="https://arcprize.org/arc-agi/3" target="_blank" rel="noopener">ARC-AGI-3 overview</a>,
+    <a href="https://arcprize.org/results/openai-gpt-5-6" target="_blank" rel="noopener">ARC Prize GPT-5.6 results</a>,
+    <a href="https://arxiv.org/abs/2603.24621" target="_blank" rel="noopener">ARC-AGI-3 paper</a>.
+  </p>
+</section>
+
+<footer>
+  Riferimento costruito su: il tuo file "Funzionamento ChatGPT" (2023) + la ricostruzione bottom-up di questa conversazione.<br>
+  Struttura: mechanism-first · analogia come sigillo · trappole sui punti di incrinatura · check leggeri.
+</footer>
+
+</div>
+
+<script>
+  // progress bar
+  const bar=document.getElementById('bar');
+  addEventListener('scroll',()=>{const h=document.documentElement;const sc=h.scrollTop/(h.scrollHeight-h.clientHeight);bar.style.width=(sc*100)+'%';});
+  // checks: reveal on choice, mark correct/wrong
+  document.querySelectorAll('.check').forEach(box=>{
+    const opts=box.querySelectorAll('.opt');
+    const rev=box.querySelector('.reveal');
+    opts.forEach(o=>o.addEventListener('click',()=>{
+      opts.forEach(x=>{
+        x.classList.add(x.dataset.c==='1'?'correct':'wrong');
+        x.disabled=true;
+      });
+      rev.classList.add('show');
+    }));
+  });
+</script>
+</body>
+</html>
